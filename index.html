@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Masjid &amp; Surau Finder</title>
+<meta name="description" content="Find nearby mosques and surau from your current location.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#25282c;--mute:#6b6f73;--line:#dedbd2;--green:#3f6b57;--sand:#b5894f}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:var(--card);border-bottom:1px solid var(--line)}
+h1{font-size:1.05rem;font-weight:650;margin:0;letter-spacing:-.01em}
+.loc{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--mute);white-space:nowrap}
+.loc i{width:8px;height:8px;border-radius:50%;background:#b9b6ad}
+.loc.ok i{background:var(--green)}.loc.err i{background:#b3402f}
+#map{flex:1;min-height:180px;background:#e9e7e0}
+body.list #map{display:none}
+#sheet{background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(12px + env(safe-area-inset-bottom,0px))}
+body.list #sheet{flex:1;overflow:auto}
+.row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+input,select,button{font:inherit;color:inherit}
+input[type=search]{flex:1;min-width:0;height:42px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+select{height:38px;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:0 6px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--bg);height:38px;padding:0 14px;cursor:pointer}
+.seg button.on{background:var(--ink);color:#fff}
+#refresh{margin-left:auto;height:38px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);cursor:pointer}
+#count{font-size:.8rem;color:var(--mute)}
+ul{list-style:none;margin:0;padding:0;max-height:30dvh;overflow:auto}
+body.list ul{max-height:none}
+li button{display:flex;width:100%;align-items:center;gap:10px;padding:11px 2px;border:0;border-top:1px solid var(--line);background:none;text-align:left;cursor:pointer;min-height:48px}
+li .nm{flex:1;min-width:0}
+li .nm b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li .nm small{color:var(--mute)}
+li .d{font-variant-numeric:tabular-nums;color:var(--mute);font-size:.9rem}
+.dot{width:12px;height:12px;border-radius:50%;flex:none}
+.dot.masjid,.pin.masjid{background:var(--green)}.dot.surau,.pin.surau{background:var(--sand)}
+.pin{width:16px;height:16px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.pin.sel{transform:scale(1.5)}
+.me{width:16px;height:16px;border-radius:50%;background:#2f6fdb;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.35)}
+#note{padding:14px 2px;color:var(--mute)}
+#note button{display:block;margin-top:10px;height:44px;padding:0 16px;border:1px solid var(--ink);border-radius:8px;background:none;cursor:pointer}
+#detail h2{font-size:1.15rem;margin:4px 0 2px}
+#detail p{margin:2px 0;color:var(--mute)}
+#back{border:0;background:none;padding:6px 0;color:var(--green);font-weight:600;cursor:pointer}
+.nav{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.nav a{display:flex;align-items:center;justify-content:center;height:52px;border-radius:10px;font-weight:600;text-decoration:none}
+.gm{background:var(--green);color:#fff}.wz{border:1.5px solid var(--ink);color:var(--ink)}
+[hidden]{display:none!important}
+:focus-visible{outline:2px solid #2f6fdb;outline-offset:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Masjid &amp; Surau Finder</h1>
+  <div class="loc" id="loc"><i></i><span>Locating…</span></div>
+</header>
+<div id="map"></div>
+<section id="sheet">
+  <div id="browse">
+    <div class="row"><input id="q" type="search" placeholder="Search by name" aria-label="Search by name"></div>
+    <div class="row">
+      <div class="seg"><button id="vMap" class="on">Map</button><button id="vList">List</button></div>
+      <select id="radius" aria-label="Search radius">
+        <option value="1000">1 km</option><option value="2000">2 km</option>
+        <option value="3000" selected>3 km</option><option value="5000">5 km</option><option value="8000">8 km</option>
+      </select>
+      <button id="refresh">Refresh</button>
+    </div>
+    <div id="count"></div>
+    <ul id="list"></ul>
+    <div id="note"></div>
+  </div>
+  <div id="detail" hidden>
+    <button id="back">Back to nearby</button>
+    <h2 id="dName"></h2>
+    <p id="dMeta"></p>
+    <p id="dAddr"></p>
+    <div class="nav"><a id="gm" class="gm" target="_blank" rel="noopener">Google Maps</a><a id="wz" class="wz" target="_blank" rel="noopener">Waze</a></div>
+  </div>
+</section>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const OVERPASS = ["https://overpass-api.de/api/interpreter","https://overpass.kumi.systems/api/interpreter"];
+let map, me = null, meMarker, ring, places = [], markers = {}, selId = null, layer;
+
+map = L.map("map", {zoomControl:false}).setView([4.2, 108], 6);
+L.control.zoom({position:"topright"}).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"&copy; OpenStreetMap contributors"}).addTo(map);
+layer = L.layerGroup().addTo(map);
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = d => d < 1000 ? Math.max(10, Math.round(d/10)*10) + " m" : (d/1000).toFixed(1) + " km";
+function dist(a, b, c, d) {
+  const r = Math.PI/180, x = (c-a)*r, y = (d-b)*r;
+  const h = Math.sin(x/2)**2 + Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2;
+  return 12742000 * Math.asin(Math.sqrt(h));
+}
+function setLoc(text, cls) { $("loc").className = "loc " + (cls||""); $("loc").lastElementChild.textContent = text; }
+function note(msg, retry) {
+  $("note").innerHTML = msg ? esc(msg) + (retry ? `<button id="retry">${esc(retry)}</button>` : "") : "";
+  if (retry) $("retry").onclick = locate;
+}
+
+function locate() {
+  $("list").innerHTML = ""; $("count").textContent = "";
+  showList();
+  if (!navigator.geolocation) { setLoc("No location", "err"); note("This browser cannot share your location.", "Try again"); return; }
+  setLoc("Locating…"); note("Getting your location…");
+  navigator.geolocation.getCurrentPosition(pos => {
+    me = [pos.coords.latitude, pos.coords.longitude];
+    if (meMarker) meMarker.remove(); if (ring) ring.remove();
+    meMarker = L.marker(me, {icon:L.divIcon({className:"", html:'<div class="me"></div>', iconSize:[16,16]}), interactive:false, zIndexOffset:1000}).addTo(map);
+    ring = L.circle(me, {radius:+$("radius").value, color:"#3f6b57", weight:1, fillOpacity:.04, interactive:false}).addTo(map);
+    map.fitBounds(ring.getBounds(), {padding:[10,10]});
+    setLoc("Location found", "ok");
+    fetchPlaces();
+  }, err => {
+    setLoc("Location off", "err");
+    note(err.code === 1
+      ? "Location access is blocked. Allow it in your browser settings for this site, then try again."
+      : "Could not get your location. Check that GPS is on and try again.", "Try again");
+  }, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
+}
+
+async function fetchPlaces() {
+  const r = +$("radius").value, [la, lo] = me;
+  const q = `[out:json][timeout:20];(nwr["amenity"="place_of_worship"]["religion"="muslim"](around:${r},${la},${lo});nwr["amenity"="prayer_room"](around:${r},${la},${lo}););out center tags;`;
+  note("Searching nearby…"); $("list").innerHTML = ""; $("count").textContent = "";
+  let data = null;
+  for (const url of OVERPASS) {
+    try {
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 22000);
+      const res = await fetch(url, {method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}, signal:ctl.signal});
+      clearTimeout(t);
+      if (!res.ok) throw new Error(res.status);
+      data = await res.json(); break;
+    } catch (e) { /* try next server */ }
+  }
+  if (!data) { note("Could not load places. The map data service may be busy.", "Try again"); return; }
+  const seen = new Set();
+  places = data.elements.map(e => {
+    const t = e.tags || {}, lat = e.lat ?? e.center?.lat, lon = e.lon ?? e.center?.lon;
+    if (lat == null || lon == null) return null;
+    const name = t.name || t["name:ms"] || t["name:en"] || "";
+    const kind = /masjid|mosque/i.test(name) || t.building === "mosque" ? "masjid"
+      : (t.amenity === "prayer_room" || /surau|musolla|musalla|mussalla|prayer|solat/i.test(name)) ? "surau" : "masjid";
+    const addr = t["addr:full"] || [[t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "), t["addr:suburb"], t["addr:city"], t["addr:postcode"]].filter(Boolean).join(", ");
+    return {id:e.type + e.id, name, kind, lat, lon, addr, d:dist(la, lo, lat, lon)};
+  }).filter(p => p && !seen.has(p.id) && seen.add(p.id)).sort((a, b) => a.d - b.d);
+  render();
+}
+
+const label = p => p.name || (p.kind === "surau" ? "Unnamed surau" : "Unnamed masjid");
+const kindText = p => p.kind === "surau" ? "Surau" : "Masjid";
+
+function render() {
+  const term = $("q").value.trim().toLowerCase();
+  const shown = places.filter(p => !term || p.name.toLowerCase().includes(term));
+  layer.clearLayers(); markers = {};
+  $("list").innerHTML = shown.map(p => `<li><button data-id="${p.id}"><span class="dot ${p.kind}"></span><span class="nm"><b>${esc(label(p))}</b><small>${kindText(p)}</small></span><span class="d">${fmt(p.d)}</span></button></li>`).join("");
+  shown.forEach(p => {
+    const m = L.marker([p.lat, p.lon], {icon:L.divIcon({className:"", html:`<div class="pin ${p.kind}"></div>`, iconSize:[16,16]}), title:label(p)});
+    m.on("click", () => select(p.id)); m.addTo(layer); markers[p.id] = m;
+  });
+  $("count").textContent = places.length ? `${shown.length} of ${places.length} found within ${fmt(+$("radius").value)}` : "";
+  if (!places.length) note(`No mosques or surau found within ${fmt(+$("radius").value)}. Try a larger radius.`);
+  else if (!shown.length) note("No place matches that name.");
+  else note("");
+}
+
+function select(id) {
+  const p = places.find(x => x.id === id); if (!p) return;
+  document.querySelectorAll(".pin.sel").forEach(e => e.classList.remove("sel"));
+  markers[id]?.getElement()?.firstChild.classList.add("sel");
+  $("dName").textContent = label(p);
+  $("dMeta").textContent = `${kindText(p)} · ${fmt(p.d)} away`;
+  $("dAddr").textContent = p.addr || "Address not available";
+  $("gm").href = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}&travelmode=driving`;
+  $("wz").href = `https://waze.com/ul?ll=${p.lat},${p.lon}&navigate=yes`;
+  $("browse").hidden = true; $("detail").hidden = false;
+  document.body.classList.remove("list"); setView("map");
+  setTimeout(() => { map.invalidateSize(); map.flyTo([p.lat, p.lon], Math.max(map.getZoom(), 16), {duration:.5}); }, 50);
+}
+function closeDetail() {
+  document.querySelectorAll(".pin.sel").forEach(e => e.classList.remove("sel"));
+  $("detail").hidden = true; $("browse").hidden = false;
+  setTimeout(() => map.invalidateSize(), 50);
+}
+function setView(v) {
+  $("vMap").classList.toggle("on", v === "map"); $("vList").classList.toggle("on", v === "list");
+  document.body.classList.toggle("list", v === "list");
+  setTimeout(() => map.invalidateSize(), 50);
+}
+function showList() { if (!$("detail").hidden) closeDetail(); }
+
+$("list").onclick = e => { const b = e.target.closest("button"); if (b) select(b.dataset.id); };
+$("back").onclick = closeDetail;
+$("vMap").onclick = () => setView("map");
+$("vList").onclick = () => setView("list");
+$("refresh").onclick = locate;
+$("q").oninput = render;
+$("radius").onchange = () => { if (me) { ring.setRadius(+$("radius").value); map.fitBounds(ring.getBounds(), {padding:[10,10]}); fetchPlaces(); } else locate(); };
+locate();
+</script>
+</body>
+</html>
